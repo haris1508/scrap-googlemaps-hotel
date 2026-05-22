@@ -131,6 +131,9 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
 .tab-btn:hover{background:var(--border);color:var(--text)}
 .tab-btn.active{background:rgba(56,189,248,.15);color:var(--accent);font-weight:700}
 
+/* ── ADMIN BOUNDARY TOOLTIP ── */
+.leaflet-tooltip.admin-tip{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none}
+
 /* ── FULLSCREEN ── */
 .leaflet-control-zoom{border:1px solid var(--border) !important;background:var(--panel) !important}
 .leaflet-control-zoom a{background:var(--panel) !important;color:var(--text) !important;border-color:var(--border) !important}
@@ -189,6 +192,15 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
         <button class="tab-btn" id="tab-star" onclick="setColorMode('star')">⭐ Bintang</button>
         <button class="tab-btn" id="tab-price" onclick="setColorMode('price')">💰 Harga</button>
       </div>
+    </div>
+
+    <div class="ctrl">
+      <label>Batas Wilayah</label>
+      <select id="f-admin-level" onchange="if(adminVisible) loadAdminLayer(this.value)">
+        <option value="provinsi">Provinsi</option>
+        <option value="kabkota">Kab / Kota</option>
+      </select>
+      <button class="icon-btn" id="btn-admin" onclick="toggleAdmin()">🗺️ Batas</button>
     </div>
 
     <button class="icon-btn" id="btn-fit" title="Zoom ke semua hotel">⊡ Fit</button>
@@ -738,6 +750,90 @@ document.getElementById('map').addEventListener('drop',e=>{
   const files=Array.from(e.dataTransfer.files).filter(f=>f.name.endsWith('.csv'));
   if(files.length) handleFiles(files);
 });
+
+// ════════════════════════════════════════════════
+// ADMIN BOUNDARIES
+// ════════════════════════════════════════════════
+let adminLayer   = null;
+let adminCache   = {};
+let adminVisible = false;
+
+const ADMIN_URLS = {
+  provinsi: 'https://raw.githubusercontent.com/superpikar/indonesia-geojson/master/indonesia-province.geojson',
+  kabkota:  'https://raw.githubusercontent.com/superpikar/indonesia-geojson/master/indonesia.geojson'
+};
+
+// Nama properti GeoJSON beda tiap level
+const ADMIN_NAME_KEYS = {
+  provinsi: ['state','name','NAME_1','PROVINSI'],
+  kabkota:  ['city','name','NAME_2','KABKOTA','KAB_KOTA']
+};
+
+function getAdminName(props, level) {
+  for(const k of (ADMIN_NAME_KEYS[level]||[])) {
+    if(props[k]) return props[k];
+  }
+  // fallback: ambil value string pertama yg ada
+  return Object.values(props).find(v => typeof v==='string' && v.length>1) || '';
+}
+
+async function loadAdminLayer(level) {
+  if(adminLayer) { map.removeLayer(adminLayer); adminLayer = null; }
+
+  const btn = document.getElementById('btn-admin');
+  btn.textContent = '⏳ Loading…';
+  btn.disabled = true;
+
+  try {
+    if(!adminCache[level]) {
+      const res = await fetch(ADMIN_URLS[level]);
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      adminCache[level] = await res.json();
+    }
+
+    adminLayer = L.geoJSON(adminCache[level], {
+      style: {
+        color:       '#38bdf8',
+        weight:      1.5,
+        opacity:     0.8,
+        fillColor:   '#38bdf8',
+        fillOpacity: 0.04
+      },
+      onEachFeature(feature, layer) {
+        const name = getAdminName(feature.properties, level);
+        if(name) {
+          layer.bindTooltip(name, {sticky:true, className:'admin-tip', direction:'top'});
+        }
+        layer.on('mouseover', function(){ this.setStyle({fillOpacity:0.12, weight:2}); });
+        layer.on('mouseout',  function(){ adminLayer.resetStyle(this); });
+      }
+    }).addTo(map);
+
+    btn.textContent  = '🗺️ Batas';
+    btn.disabled     = false;
+    btn.classList.add('active');
+
+  } catch(e) {
+    console.error('Admin boundary error:', e);
+    btn.textContent = '🗺️ Batas';
+    btn.disabled    = false;
+    adminVisible    = false;
+    btn.classList.remove('active');
+    alert('Gagal memuat batas wilayah.\n\n' + e.message + '\n\nCek koneksi internet dan coba lagi.');
+  }
+}
+
+async function toggleAdmin() {
+  adminVisible = !adminVisible;
+  if(!adminVisible) {
+    if(adminLayer) { map.removeLayer(adminLayer); adminLayer = null; }
+    document.getElementById('btn-admin').classList.remove('active');
+    document.getElementById('btn-admin').textContent = '🗺️ Batas';
+    return;
+  }
+  const level = document.getElementById('f-admin-level').value;
+  await loadAdminLayer(level);
+}
 
 // ════════════════════════════════════════════════
 // AUTO-LOAD CSV dari repo (data/bali_hotels.csv dll)
