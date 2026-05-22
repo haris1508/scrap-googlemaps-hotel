@@ -660,6 +660,49 @@ document.getElementById('map').addEventListener('drop',e=>{
   const files=Array.from(e.dataTransfer.files).filter(f=>f.name.endsWith('.csv'));
   if(files.length) handleFiles(files);
 });
+
+// ════════════════════════════════════════════════
+// AUTO-LOAD CSV dari repo (data/bali_hotels.csv dll)
+// Kalau fetch berhasil (jalan di GitHub Pages / server),
+// langsung load tanpa perlu drag & drop manual.
+// ════════════════════════════════════════════════
+const AUTO_CSV = [
+  'data/bali_hotels.csv',
+  'data/jakarta_hotels.csv',
+];
+
+async function autoLoadFromRepo() {
+  const loaded = [];
+  for (const path of AUTO_CSV) {
+    try {
+      const res = await fetch(path);
+      if (!res.ok) continue;
+      const text = await res.text();
+      const n = loadCSV(text, path);
+      if (n > 0) loaded.push(path.replace('data/','').replace('_hotels.csv',''));
+    } catch(e) { /* skip jika file tidak ada */ }
+  }
+
+  if (loaded.length > 0) {
+    document.getElementById('drop-overlay').style.display = 'none';
+    document.getElementById('s-source').textContent = 'Sumber: ' + loaded.join(', ');
+
+    // Auto-adjust price slider
+    const prices = allHotels.map(h=>parsePrice(h.price_display)).filter(p=>p!==null&&p>0);
+    if (prices.length) {
+      maxPrice = Math.max(...prices);
+      const sl = document.getElementById('f-price-max');
+      sl.max = maxPrice; sl.value = maxPrice;
+      document.getElementById('v-price').textContent = '≤ Semua';
+    }
+
+    applyFilters();
+    fitBounds();
+  }
+  // Kalau semua gagal (buka file:// lokal), overlay tetap tampil normal
+}
+
+autoLoadFromRepo();
 </script>
 </body>
 </html>
