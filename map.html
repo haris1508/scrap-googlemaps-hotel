@@ -759,8 +759,8 @@ let adminCache   = {};
 let adminVisible = false;
 
 const ADMIN_URLS = {
-  provinsi: 'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_IDN_1.json',
-  kabkota:  'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_IDN_2.json'
+  provinsi: 'geojson/idn_provinsi.geojson',
+  kabkota:  'geojson/idn_kabkota.geojson'
 };
 
 // Nama properti GeoJSON GADM
@@ -832,11 +832,6 @@ async function toggleAdmin() {
     return;
   }
   const level = document.getElementById('f-admin-level').value;
-  // Warn user for large file
-  if(level === 'kabkota' && !adminCache['kabkota']) {
-    const ok = confirm('File batas Kab/Kota cukup besar (~30MB).\nProses loading mungkin 10–30 detik.\n\nLanjutkan?');
-    if(!ok) { adminVisible = false; return; }
-  }
   await loadAdminLayer(level);
 }
 
