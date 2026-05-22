@@ -10,11 +10,22 @@ Fields extracted per hotel:
   categories, star_rating, rating, amenities, description, price_display,
   website, phone, google_maps_url
 
-For individual reviews (text, date, author, score), see fetch_reviews() below.
-
 Usage:
-  python3 fetch.py --city Jakarta --lat -6.2 --lng 106.8 --radius 0.15
-  python3 fetch.py --grid ID   # grid scan seluruh Indonesia
+  # Bounding box — kasih 4 titik sudut (lat/lng), otomatis grid di dalamnya
+  python3 fetch.py --bbox -6.38,106.68 -6.38,107.02 -6.05,107.02 -6.05,106.68
+
+  # Atau 2 titik diagonal (lebih ringkas, hasil sama)
+  python3 fetch.py --bbox -6.38,106.68 -6.05,107.02
+
+  # Kota preset
+  python3 fetch.py --city bali
+  python3 fetch.py --city jakarta
+
+  # Custom titik tunggal
+  python3 fetch.py --lat -6.2 --lng 106.8
+
+  # Zoom level (default 17 = paling detail, 13 = cepat tapi kurang lengkap)
+  python3 fetch.py --bbox -6.38,106.68 -6.05,107.02 --zoom 17
   python3 fetch.py --help
 """
 
@@ -49,10 +60,11 @@ HEADERS = {
 # pb parameter template — encodes: query, viewport center, zoom, and all
 # data fields we want (rating, price, amenities, reviews, photos, etc.).
 # Verified working; extra trailing params cause empty responses.
+# {scale} dan {zoom} bisa diganti sesuai kebutuhan.
 PB_TEMPLATE = (
     "!1shotel"
-    "!4m8!1m3!1d{radius}!2d{lng}!3d{lat}"
-    "!3m2!1i1024!2i768!4f13.1"
+    "!4m8!1m3!1d{scale}!2d{lng}!3d{lat}"
+    "!3m2!1i1024!2i768!4f{zoom}"
     "!7i20"
     "!10b1"
     "!12m53"
@@ -68,6 +80,30 @@ PB_TEMPLATE = (
     "!46m1!1b0!96b1!99b1"
     "!19m4!2m3!1i360!2i120!4i8"
 )
+
+# Scale per zoom level (diukur dari konstanta zoom 13.1 = 63464)
+# Makin tinggi zoom → tile lebih kecil → tangkap lebih banyak hotel
+ZOOM_SCALE = {
+    13: 63464,
+    14: 31732,
+    15: 15866,
+    16:  7933,
+    17:  3966,   # default — paling komprehensif
+    18:  1983,
+    19:   991,
+}
+
+# Step size (degrees) yang direkomendasikan per zoom level
+# agar tiles cukup overlap tapi tidak terlalu banyak duplikat
+ZOOM_STEP = {
+    13: 0.04,
+    14: 0.02,
+    15: 0.015,
+    16: 0.012,
+    17: 0.010,   # ~1.1km step
+    18: 0.005,
+    19: 0.003,
+}
 
 # Predefined city grids [name, lat, lng, radius_degrees]
 CITY_GRIDS = {
@@ -243,15 +279,14 @@ def _parse_response(raw: bytes) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def fetch_hotels(session: requests.Session, lat: float, lng: float,
-                 radius: float = 0.08) -> list[dict]:
+                 zoom: int = 17) -> list[dict]:
     """Fetch hotels for one viewport tile.
 
-    `radius` in degrees is used only for grid-spacing/dedup logic.
-    The pb `1d` value is Google's internal Mercator viewport scale —
-    63464 is the constant for zoom 13.1 + 1024×768; using a smaller value
-    returns an empty response.
+    zoom: 13 (cepat, ~20 hotel populer) s/d 17 (lambat, komprehensif).
+    Default zoom=17 untuk coverage terlengkap.
     """
-    pb = PB_TEMPLATE.format(lat=lat, lng=lng, radius=63464)
+    scale = ZOOM_SCALE.get(zoom, 3966)
+    pb = PB_TEMPLATE.format(lat=lat, lng=lng, scale=scale, zoom=float(zoom))
     params = {
         "tbm":      "map",
         "authuser": "0",
@@ -388,7 +423,51 @@ def _get_writer(path: Path, fields: list[str]):
 def build_grid(lat_center: float, lng_center: float,
                radius_deg: float = 0.08) -> list[tuple]:
     """Single tile."""
-    return [(lat_center, lng_center, radius_deg)]
+    return [(lat_center, lng_center, 17)]
+
+
+def build_bbox_grid(points: list[tuple], zoom: int = 17) -> list[tuple]:
+    """
+    Buat grid dari bounding box.
+
+    points: list of (lat, lng) — bisa 2 titik diagonal, atau 4 sudut,
+            atau lebih. Min/max otomatis diambil sebagai bbox.
+
+    Contoh:
+      # 4 sudut Jakarta
+      build_bbox_grid([(-6.38,106.68), (-6.38,107.02),
+                       (-6.05,107.02), (-6.05,106.68)])
+
+      # 2 titik diagonal (lebih ringkas)
+      build_bbox_grid([(-6.38,106.68), (-6.05,107.02)])
+
+    Returns list of (lat, lng, zoom).
+    """
+    lats = [p[0] for p in points]
+    lngs = [p[1] for p in points]
+    lat_min, lat_max = min(lats), max(lats)
+    lng_min, lng_max = min(lngs), max(lngs)
+
+    step = ZOOM_STEP.get(zoom, 0.01)
+
+    tiles = []
+    lat = lat_min
+    while lat <= lat_max + step * 0.01:
+        lng = lng_min
+        while lng <= lng_max + step * 0.01:
+            tiles.append((round(lat, 6), round(lng, 6), zoom))
+            lng = round(lng + step, 6)
+        lat = round(lat + step, 6)
+
+    area_km2 = abs(lat_max - lat_min) * abs(lng_max - lng_min) * 111 * 111
+    print(f"Bounding box  : ({lat_min}, {lng_min}) → ({lat_max}, {lng_max})")
+    print(f"Area          : ~{area_km2:.0f} km²")
+    print(f"Zoom          : {zoom} (step {step}°, ~{step*111:.1f}km/tile)")
+    print(f"Total tiles   : {len(tiles)}")
+    print(f"Est. waktu    : ~{len(tiles)*0.4/60:.1f} menit")
+    print(f"Est. hotel    : bervariasi (makin padat, makin banyak)")
+
+    return tiles
 
 
 def build_city_grid(city_key: str) -> list[tuple]:
@@ -432,9 +511,11 @@ def run(tiles: list[tuple], out_prefix: str, fetch_rev: bool = False,
     total_new = 0
     try:
         for i, tile in enumerate(tiles):
-            lat, lng, radius = tile
-            print(f"[{i+1}/{len(tiles)}] tile lat={lat:.3f} lng={lng:.3f} ... ", end="", flush=True)
-            hotels = fetch_hotels(session, lat, lng, radius)
+            lat, lng, zoom = tile[0], tile[1], tile[2] if len(tile) > 2 else 17
+            pct = (i+1)/len(tiles)*100
+            bar = "█" * int(pct/5)
+            print(f"[{i+1:4d}/{len(tiles)}] {bar:<20} {pct:4.0f}% lat={lat:.4f} lng={lng:.4f} ", end="", flush=True)
+            hotels = fetch_hotels(session, lat, lng, zoom)
             new_this_tile = 0
             for hotel in hotels:
                 pid = hotel["place_id"]
@@ -473,26 +554,68 @@ def run(tiles: list[tuple], out_prefix: str, fetch_rev: bool = False,
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Maps Hotel Scraper")
-    parser.add_argument("--city",    help="City key: jakarta|bali|surabaya|yogyakarta|bandung|lombok|ID")
-    parser.add_argument("--lat",     type=float, help="Custom lat (requires --lng)")
-    parser.add_argument("--lng",     type=float, help="Custom lng (requires --lat)")
-    parser.add_argument("--radius",  type=float, default=0.08, help="Viewport radius in degrees (default 0.08 ≈ 9km)")
-    parser.add_argument("--out",     default=None, help="Output file prefix (default: city key or 'custom')")
-    parser.add_argument("--reviews", action="store_true", help="Also fetch individual reviews per hotel (slow)")
-    parser.add_argument("--sleep",   type=float, default=0.4, help="Sleep between tile requests (default 0.4s)")
+    parser = argparse.ArgumentParser(
+        description="Google Maps Hotel Scraper",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Contoh penggunaan:
+  # Bounding box — 2 titik diagonal (SW dan NE)
+  python3 fetch.py --bbox -6.38,106.68 -6.05,107.02
+
+  # Bounding box — 4 sudut (urutan bebas, otomatis diambil min/max)
+  python3 fetch.py --bbox -6.38,106.68 -6.38,107.02 -6.05,107.02 -6.05,106.68
+
+  # Dengan zoom lebih rendah (lebih cepat, kurang lengkap)
+  python3 fetch.py --bbox -6.38,106.68 -6.05,107.02 --zoom 15
+
+  # Kota preset
+  python3 fetch.py --city bali
+  python3 fetch.py --city jakarta
+
+  # Titik custom + radius
+  python3 fetch.py --lat -6.2 --lng 106.8
+        """
+    )
+    parser.add_argument("--bbox",    nargs="+", metavar="LAT,LNG",
+                        help="Bounding box: 2-4 titik lat,lng (misal: -6.38,106.68 -6.05,107.02)")
+    parser.add_argument("--city",    help="Kota preset: jakarta|bali|surabaya|yogyakarta|bandung|lombok|ID")
+    parser.add_argument("--lat",     type=float, help="Lat titik tunggal (butuh --lng)")
+    parser.add_argument("--lng",     type=float, help="Lng titik tunggal (butuh --lat)")
+    parser.add_argument("--zoom",    type=int, default=17, choices=[13,14,15,16,17,18,19],
+                        help="Zoom level: 13=cepat/populer, 17=lambat/lengkap (default: 17)")
+    parser.add_argument("--out",     default=None, help="Prefix nama file output (default: bbox/city/custom)")
+    parser.add_argument("--reviews", action="store_true", help="Fetch individual reviews per hotel (lambat ~1s/hotel)")
+    parser.add_argument("--sleep",   type=float, default=0.35, help="Jeda antar request detik (default: 0.35)")
     args = parser.parse_args()
 
-    if args.city:
-        tiles = build_city_grid(args.city)
-        prefix = args.out or args.city.lower()
-    elif args.lat and args.lng:
-        tiles = build_grid(args.lat, args.lng, args.radius)
-        prefix = args.out or "custom"
-    else:
-        parser.error("Provide --city or both --lat and --lng")
+    if args.bbox:
+        # Parse "lat,lng" strings
+        points = []
+        for pt in args.bbox:
+            try:
+                lat_s, lng_s = pt.split(",")
+                points.append((float(lat_s), float(lng_s)))
+            except ValueError:
+                parser.error(f"Format salah: '{pt}'. Gunakan format LAT,LNG (misal: -6.38,106.68)")
+        if len(points) < 2:
+            parser.error("--bbox butuh minimal 2 titik")
+        tiles  = build_bbox_grid(points, zoom=args.zoom)
+        prefix = args.out or "bbox"
 
-    print(f"Starting scrape: {len(tiles)} tiles, prefix='{prefix}', reviews={args.reviews}")
+    elif args.city:
+        city_tiles = build_city_grid(args.city)
+        # inject zoom ke tiap tile
+        tiles  = [(t[0], t[1], args.zoom) for t in city_tiles]
+        prefix = args.out or args.city.lower()
+
+    elif args.lat is not None and args.lng is not None:
+        tiles  = [(args.lat, args.lng, args.zoom)]
+        prefix = args.out or "custom"
+
+    else:
+        parser.error("Berikan salah satu: --bbox, --city, atau --lat + --lng")
+
+    print(f"\nMulai scraping: {len(tiles)} tiles | zoom={args.zoom} | prefix='{prefix}' | reviews={args.reviews}\n")
     run(tiles, prefix, fetch_rev=args.reviews, sleep_sec=args.sleep)
 
 
