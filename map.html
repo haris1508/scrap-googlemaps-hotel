@@ -218,12 +218,13 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
 
 <!-- LEGEND -->
 <div id="legend">
-  <div class="lg-title">Rating</div>
-  <div class="lg-row"><div class="lg-dot" style="background:var(--green)"></div> ≥ 4.5</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#84cc16"></div> 4.0 – 4.4</div>
-  <div class="lg-row"><div class="lg-dot" style="background:var(--yellow)"></div> 3.5 – 3.9</div>
-  <div class="lg-row"><div class="lg-dot" style="background:var(--orange)"></div> 3.0 – 3.4</div>
-  <div class="lg-row"><div class="lg-dot" style="background:var(--red)"></div> &lt; 3.0 / N/A</div>
+  <div class="lg-title">Bintang Hotel</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#f59e0b"></div> ⭐⭐⭐⭐⭐ 5 bintang</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#38bdf8"></div> ⭐⭐⭐⭐ 4 bintang</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#22c55e"></div> ⭐⭐⭐ 3 bintang</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#a78bfa"></div> ⭐⭐ 2 bintang</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> ⭐ 1 bintang</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#64748b"></div> Tidak terklasifikasi</div>
 </div>
 
 <!-- DROP OVERLAY -->
@@ -270,6 +271,16 @@ const ratingColor = r => {
   if(n>=3.5) return '#eab308';
   if(n>=3.0) return '#f97316';
   return '#ef4444';
+};
+
+const starColor = s => {
+  const n = extractStar(s);
+  if(n===5) return '#f59e0b';   // gold
+  if(n===4) return '#38bdf8';   // biru
+  if(n===3) return '#22c55e';   // hijau
+  if(n===2) return '#a78bfa';   // ungu
+  if(n===1) return '#f97316';   // orange
+  return '#64748b';             // abu (tidak ada bintang)
 };
 
 const makeIcon = (color, size=11) => L.divIcon({
@@ -400,7 +411,7 @@ function renderMarkers() {
 function addMarker(h, layer) {
   const lat = +h.latitude, lng = +h.longitude;
   if(isNaN(lat)||isNaN(lng)) return;
-  const color = ratingColor(h.rating);
+  const color = starColor(h.star_rating);
   const m = L.marker([lat,lng],{icon:makeIcon(color,11)})
     .bindPopup(makePopup(h),{maxWidth:300,className:'hotel-popup'});
   m.on('click',()=>{ highlightItem(h.place_id); openPopupId=h.place_id; });
