@@ -125,6 +125,12 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
 /* ── PRICE RANGE DISPLAY ── */
 #price-display{font-size:10px;color:var(--accent);white-space:nowrap}
 
+/* ── TAB TOGGLE ── */
+.tab-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.tab-btn{background:transparent;border:none;color:var(--muted);padding:4px 10px;font-size:11px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
+.tab-btn:hover{background:var(--border);color:var(--text)}
+.tab-btn.active{background:rgba(56,189,248,.15);color:var(--accent);font-weight:700}
+
 /* ── FULLSCREEN ── */
 .leaflet-control-zoom{border:1px solid var(--border) !important;background:var(--panel) !important}
 .leaflet-control-zoom a{background:var(--panel) !important;color:var(--text) !important;border-color:var(--border) !important}
@@ -176,6 +182,14 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
       </select>
     </div>
 
+    <div class="ctrl">
+      <label>Warna</label>
+      <div class="tab-toggle">
+        <button class="tab-btn active" id="tab-rating" onclick="setColorMode('rating')">★ Rating</button>
+        <button class="tab-btn" id="tab-star" onclick="setColorMode('star')">⭐ Bintang</button>
+      </div>
+    </div>
+
     <button class="icon-btn" id="btn-fit" title="Zoom ke semua hotel">⊡ Fit</button>
     <button class="icon-btn" id="btn-export" title="Ekspor data yang ditampilkan">⬇ CSV</button>
     <button class="icon-btn" id="btn-sidebar" title="Panel daftar">☰ List</button>
@@ -218,13 +232,12 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
 
 <!-- LEGEND -->
 <div id="legend">
-  <div class="lg-title">Bintang Hotel</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#f59e0b"></div> ⭐⭐⭐⭐⭐ 5 bintang</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#38bdf8"></div> ⭐⭐⭐⭐ 4 bintang</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#22c55e"></div> ⭐⭐⭐ 3 bintang</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#a78bfa"></div> ⭐⭐ 2 bintang</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> ⭐ 1 bintang</div>
-  <div class="lg-row"><div class="lg-dot" style="background:#64748b"></div> Tidak terklasifikasi</div>
+  <div class="lg-title">Rating</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#22c55e"></div> ≥ 4.5</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#84cc16"></div> 4.0 – 4.4</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#eab308"></div> 3.5 – 3.9</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> 3.0 – 3.4</div>
+  <div class="lg-row"><div class="lg-dot" style="background:#ef4444"></div> &lt; 3.0 / N/A</div>
 </div>
 
 <!-- DROP OVERLAY -->
@@ -259,6 +272,7 @@ let activeItem  = null;
 let maxPrice    = 10000000;
 let openPopupId = null;
 let markerMap   = {};   // place_id → marker
+let colorMode   = 'rating'; // 'rating' | 'star'
 
 // ════════════════════════════════════════════════
 // HELPERS
@@ -408,10 +422,40 @@ function renderMarkers() {
   }
 }
 
+function setColorMode(mode) {
+  colorMode = mode;
+  document.getElementById('tab-rating').classList.toggle('active', mode==='rating');
+  document.getElementById('tab-star').classList.toggle('active', mode==='star');
+  updateLegend();
+  renderMarkers();
+}
+
+function updateLegend() {
+  const el = document.getElementById('legend');
+  if(colorMode === 'star') {
+    el.innerHTML = `
+      <div class="lg-title">Bintang Hotel</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#f59e0b"></div> ⭐⭐⭐⭐⭐ 5 bintang</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#38bdf8"></div> ⭐⭐⭐⭐ 4 bintang</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#22c55e"></div> ⭐⭐⭐ 3 bintang</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#a78bfa"></div> ⭐⭐ 2 bintang</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> ⭐ 1 bintang</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#64748b"></div> Tidak terklasifikasi</div>`;
+  } else {
+    el.innerHTML = `
+      <div class="lg-title">Rating</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#22c55e"></div> ≥ 4.5</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#84cc16"></div> 4.0 – 4.4</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#eab308"></div> 3.5 – 3.9</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> 3.0 – 3.4</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#ef4444"></div> &lt; 3.0 / N/A</div>`;
+  }
+}
+
 function addMarker(h, layer) {
   const lat = +h.latitude, lng = +h.longitude;
   if(isNaN(lat)||isNaN(lng)) return;
-  const color = starColor(h.star_rating);
+  const color = colorMode === 'star' ? starColor(h.star_rating) : ratingColor(h.rating);
   const m = L.marker([lat,lng],{icon:makeIcon(color,11)})
     .bindPopup(makePopup(h),{maxWidth:300,className:'hotel-popup'});
   m.on('click',()=>{ highlightItem(h.place_id); openPopupId=h.place_id; });
