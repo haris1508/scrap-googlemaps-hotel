@@ -1,0 +1,98 @@
+name: Scrape Google Maps Hotels
+
+on:
+  workflow_dispatch:
+    inputs:
+      city:
+        description: "City key to scrape"
+        required: true
+        default: "bali"
+        type: choice
+        options:
+          - bali
+          - jakarta
+          - surabaya
+          - yogyakarta
+          - bandung
+          - lombok
+          - ID
+      fetch_reviews:
+        description: "Also fetch individual reviews (slower, ~1s/hotel)"
+        required: false
+        default: "false"
+        type: boolean
+      sleep:
+        description: "Seconds between tile requests (default 0.4)"
+        required: false
+        default: "0.4"
+
+  schedule:
+    # Run Bali scrape every Monday 02:00 UTC
+    - cron: "0 2 * * 1"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # 6 hours max for full Indonesia grid
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Restore previous data
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: hotel-data-${{ github.event.inputs.city || 'bali' }}-${{ github.run_id }}
+          restore-keys: |
+            hotel-data-${{ github.event.inputs.city || 'bali' }}-
+
+      - name: Run scraper
+        run: |
+          python3 fetch.py \
+            --city "${{ github.event.inputs.city || 'bali' }}" \
+            --sleep "${{ github.event.inputs.sleep || '0.4' }}" \
+            ${{ github.event.inputs.fetch_reviews == 'true' && '--reviews' || '' }}
+
+      - name: Show stats
+        run: |
+          echo "=== File sizes ==="
+          du -sh data/
+          echo ""
+          echo "=== Row counts ==="
+          for f in data/*.csv; do
+            echo "$f: $(grep -c ',' "$f" || echo 0) rows"
+          done
+          echo ""
+          echo "=== Sample (first 5 hotels) ==="
+          head -6 data/*_hotels.csv 2>/dev/null || true
+
+      - name: Upload data as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotel-data-${{ github.event.inputs.city || 'bali' }}-${{ github.run_id }}
+          path: data/
+          retention-days: 90
+
+      - name: Commit data to repo (optional branch)
+        # Commits data to a 'data' branch so it's accessible via raw URL
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin data 2>/dev/null || git checkout --orphan data
+          git checkout data 2>/dev/null || true
+          git add data/
+          git diff --staged --quiet || git commit -m \
+            "data: $(date -u +%Y-%m-%d) ${{ github.event.inputs.city || 'bali' }} hotels"
+          git push origin data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
