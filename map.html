@@ -759,14 +759,14 @@ let adminCache   = {};
 let adminVisible = false;
 
 const ADMIN_URLS = {
-  provinsi: 'https://raw.githubusercontent.com/superpikar/indonesia-geojson/master/indonesia-province.geojson',
-  kabkota:  'https://raw.githubusercontent.com/superpikar/indonesia-geojson/master/indonesia.geojson'
+  provinsi: 'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_IDN_1.json',
+  kabkota:  'https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_IDN_2.json'
 };
 
-// Nama properti GeoJSON beda tiap level
+// Nama properti GeoJSON GADM
 const ADMIN_NAME_KEYS = {
-  provinsi: ['state','name','NAME_1','PROVINSI'],
-  kabkota:  ['city','name','NAME_2','KABKOTA','KAB_KOTA']
+  provinsi: ['NAME_1'],
+  kabkota:  ['NAME_2','NAME_1']
 };
 
 function getAdminName(props, level) {
@@ -832,6 +832,11 @@ async function toggleAdmin() {
     return;
   }
   const level = document.getElementById('f-admin-level').value;
+  // Warn user for large file
+  if(level === 'kabkota' && !adminCache['kabkota']) {
+    const ok = confirm('File batas Kab/Kota cukup besar (~30MB).\nProses loading mungkin 10–30 detik.\n\nLanjutkan?');
+    if(!ok) { adminVisible = false; return; }
+  }
   await loadAdminLayer(level);
 }
 
