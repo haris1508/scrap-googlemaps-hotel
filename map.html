@@ -187,6 +187,7 @@ input[type=range]{width:80px;accent-color:var(--accent);cursor:pointer}
       <div class="tab-toggle">
         <button class="tab-btn active" id="tab-rating" onclick="setColorMode('rating')">★ Rating</button>
         <button class="tab-btn" id="tab-star" onclick="setColorMode('star')">⭐ Bintang</button>
+        <button class="tab-btn" id="tab-price" onclick="setColorMode('price')">💰 Harga</button>
       </div>
     </div>
 
@@ -295,6 +296,16 @@ const starColor = s => {
   if(n===2) return '#a78bfa';   // ungu
   if(n===1) return '#f97316';   // orange
   return '#64748b';             // abu (tidak ada bintang)
+};
+
+const priceColor = p => {
+  const n = parsePrice(p);
+  if(n===null || n===0) return '#64748b'; // abu — tidak ada harga
+  if(n >= 2000000)  return '#22c55e';     // hijau tua  — > 2jt
+  if(n >= 1000000)  return '#84cc16';     // hijau muda — 1jt–2jt
+  if(n >= 500000)   return '#eab308';     // kuning     — 500rb–1jt
+  if(n >= 300000)   return '#f97316';     // orange     — 300rb–500rb
+  return '#ef4444';                       // merah      — < 300rb
 };
 
 const makeIcon = (color, size=11) => L.divIcon({
@@ -426,6 +437,7 @@ function setColorMode(mode) {
   colorMode = mode;
   document.getElementById('tab-rating').classList.toggle('active', mode==='rating');
   document.getElementById('tab-star').classList.toggle('active', mode==='star');
+  document.getElementById('tab-price').classList.toggle('active', mode==='price');
   updateLegend();
   renderMarkers();
 }
@@ -441,6 +453,15 @@ function updateLegend() {
       <div class="lg-row"><div class="lg-dot" style="background:#a78bfa"></div> ⭐⭐ 2 bintang</div>
       <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> ⭐ 1 bintang</div>
       <div class="lg-row"><div class="lg-dot" style="background:#64748b"></div> Tidak terklasifikasi</div>`;
+  } else if(colorMode === 'price') {
+    el.innerHTML = `
+      <div class="lg-title">Harga / Malam</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#22c55e"></div> &gt; Rp 2.000.000</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#84cc16"></div> Rp 1jt – 2jt</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#eab308"></div> Rp 500rb – 1jt</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#f97316"></div> Rp 300rb – 500rb</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#ef4444"></div> &lt; Rp 300.000</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#64748b"></div> Tidak ada harga</div>`;
   } else {
     el.innerHTML = `
       <div class="lg-title">Rating</div>
@@ -455,7 +476,9 @@ function updateLegend() {
 function addMarker(h, layer) {
   const lat = +h.latitude, lng = +h.longitude;
   if(isNaN(lat)||isNaN(lng)) return;
-  const color = colorMode === 'star' ? starColor(h.star_rating) : ratingColor(h.rating);
+  const color = colorMode === 'star'  ? starColor(h.star_rating) :
+                colorMode === 'price' ? priceColor(h.price_display) :
+                ratingColor(h.rating);
   const m = L.marker([lat,lng],{icon:makeIcon(color,11)})
     .bindPopup(makePopup(h),{maxWidth:300,className:'hotel-popup'});
   m.on('click',()=>{ highlightItem(h.place_id); openPopupId=h.place_id; });
