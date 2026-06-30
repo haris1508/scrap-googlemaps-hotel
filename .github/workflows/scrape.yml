@@ -26,10 +26,6 @@ on:
         required: false
         default: "0.4"
 
-  schedule:
-    # Run Bali scrape every Monday 02:00 UTC
-    - cron: "0 2 * * 1"
-
 jobs:
   scrape:
     runs-on: ubuntu-latest
